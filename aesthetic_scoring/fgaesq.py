@@ -100,13 +100,29 @@ def _pad_or_crop(image: torch.Tensor, size: int) -> torch.Tensor:
         return _add_padding(image, size)
 
 
-def _create_binary_mask(image_size: Tuple[int, int, int], patch_size: int, selected_indices) -> torch.Tensor:
+def _create_binary_mask(
+    image_size: Tuple[int, int, int],
+    patch_size: int,
+    selected_indices,
+    n_coarse_cols: int,
+) -> torch.Tensor:
+    """Build a boolean mask on the fine-scale grid selecting `selected_indices` coarse patches.
+
+    Each coarse-grid index maps to a patch_size x patch_size block in the fine
+    mask using the correct 2-D mapping:
+
+        fine_row = (coarse_idx // n_coarse_cols) * patch_size
+        fine_col = (coarse_idx  % n_coarse_cols) * patch_size
+
+    The previous implementation used ``starts = idx * patch_size`` and derived
+    rows/cols by dividing by the fine-grid width, which produces wrong
+    coordinates for patch_size > 1 on non-square grids.
+    """
     _, height, width = image_size
-    starts = torch.tensor(sorted(selected_indices)) * patch_size
-    rows = starts // width
-    cols = starts % width
     mask = torch.zeros((height, width), dtype=torch.bool)
-    for r, c in zip(rows.tolist(), cols.tolist()):
+    for idx in sorted(selected_indices):
+        r = (idx // n_coarse_cols) * patch_size
+        c = (idx  % n_coarse_cols) * patch_size
         mask[r:r + patch_size, c:c + patch_size] = True
     return mask
 
@@ -338,7 +354,7 @@ class _DiffToken:
             ps = self.scaled_patchsizes[i]
             p = ps // self.PATCH_SIZE
             sz = (3, p * n_patch_row, p * n_patch_col)
-            m = _create_binary_mask(sz, p, indices)
+            m = _create_binary_mask(sz, p, indices, n_coarse_cols=n_patch_col)
             masks_for_pe.append(m)
 
         pos_embeds = self._prepare_multiscale_pe(masks_for_pe).squeeze(0)
