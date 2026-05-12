@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aesthetic-scoring"
+version = "1.0.0"
+description = "GPU-backed aesthetic scoring library: LAION, PickScore, HPSv2, FGAesQ"
+requires-python = "==3.11.*"
+dependencies = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "transformers>=4.38.0",
+    "accelerate>=0.27.0",
+    "open_clip_torch>=2.24.0",
+    "Pillow>=10.2.0",
+    "numpy>=1.26.0",
+    "hpsv2>=1.2.0",
+    "scikit-image>=0.22.0",
+    "huggingface_hub>=0.21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["aesthetic_scoring*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "gpu: marks tests requiring GPU (select with -m gpu)",
+]
