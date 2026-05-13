@@ -15,7 +15,9 @@ dependencies = [
     "open_clip_torch>=2.24.0",
     "Pillow>=10.2.0",
     "numpy>=1.26.0",
-    "hpsv2>=1.2.0",
+    # hpsv2 PyPI package ships CUDA helpers that fail to install on macOS;
+    # this repo's hpsv2.py module bypasses it at runtime, so exclude it on darwin.
+    "hpsv2>=1.2.0; sys_platform != 'darwin'",
     "scikit-image>=0.22.0",
     "huggingface_hub>=0.21.0",
 ]

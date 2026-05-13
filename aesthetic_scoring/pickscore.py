@@ -4,9 +4,13 @@ PickScore scorer.
 Model: CLIP-H/14 fine-tuned on Pick-a-Pic v1 (yuvalkirstain/PickScore_v1).
 Uses HuggingFace CLIPModel + AutoProcessor.
 
-Precision default: fp16 on CUDA.
+Precision default: fp16 on CUDA and MPS; fp32 on CPU.
 Max input edge: 1024 px.
-Typical VRAM: ~3.5 GB fp16.
+Typical memory: ~3.5 GB fp16 (CUDA/MPS unified).
+
+MPS notes:
+- PYTORCH_ENABLE_MPS_FALLBACK=1 is set automatically by _device.py.
+- pixel_values are cast to fp16 on both CUDA and MPS.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-from ._device import get_device, get_precision, get_dtype, inference_guard
+from ._device import get_device, get_precision, get_dtype, inference_guard, empty_cache
 from .errors import ModelLoadError
 from .types import PickScoreResult
 
@@ -53,7 +57,7 @@ def _load():
         processor = AutoProcessor.from_pretrained(PROCESSOR_ID)
         model = CLIPModel.from_pretrained(MODEL_ID)
         model = model.eval().to(dev)
-        if dev.type == "cuda":
+        if dev.type in ("cuda", "mps"):
             model = model.to(dtype)
 
         _model = model
@@ -69,12 +73,16 @@ def _load():
 
 def unload() -> None:
     global _model, _processor, _device, _precision
+    dev = _device
     _model = None
     _processor = None
     _device = None
     _precision = None
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if dev is not None:
+        empty_cache(dev)
+    else:
+        from ._device import _DEVICE
+        empty_cache(_DEVICE)
 
 
 def score_pickscore(image_paths: List[str], prompt: str) -> PickScoreResult:
@@ -137,7 +145,7 @@ def score_pickscore(image_paths: List[str], prompt: str) -> PickScoreResult:
             return_tensors="pt",
         ).to(device)
 
-        if device.type == "cuda":
+        if device.type in ("cuda", "mps"):
             dtype = get_dtype(precision)
             if "pixel_values" in image_inputs:
                 image_inputs["pixel_values"] = image_inputs["pixel_values"].to(dtype)

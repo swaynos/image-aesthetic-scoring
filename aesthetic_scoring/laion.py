@@ -6,9 +6,13 @@ Checkpoint: sac+logos+ava1-l14-linearMSE.pth from
   https://github.com/christophschuhmann/improved-aesthetic-predictor
   (downloaded directly, no HF token required)
 
-Precision default: fp16 on CUDA.
+Precision default: fp16 on CUDA and MPS; fp32 on CPU.
 Max input edge: 1024 px.
-Typical VRAM: ~1.5 GB fp16.
+Typical memory: ~1.5 GB fp16 (CUDA/MPS unified).
+
+MPS notes:
+- PYTORCH_ENABLE_MPS_FALLBACK=1 is set automatically by _device.py.
+- Model and tensors are cast to fp16 on MPS, same as CUDA.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ import torch
 import torch.nn as nn
 from PIL import Image
 
-from ._device import get_device, get_precision, get_dtype, inference_guard
+from ._device import get_device, get_precision, get_dtype, inference_guard, empty_cache
 from .errors import ModelLoadError
 from .types import LaionScoreResult
 
@@ -79,7 +83,7 @@ def _load():
             "ViT-L-14", pretrained="openai"
         )
         clip_model = clip_model.to(dev)
-        if dev.type == "cuda":
+        if dev.type in ("cuda", "mps"):
             clip_model = clip_model.to(dtype)
         clip_model.eval()
 
@@ -93,7 +97,7 @@ def _load():
         state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
         mlp.load_state_dict(state)
         mlp = mlp.to(dev)
-        if dev.type == "cuda":
+        if dev.type in ("cuda", "mps"):
             mlp = mlp.to(dtype)
         mlp.eval()
 
@@ -109,14 +113,19 @@ def _load():
 
 
 def unload() -> None:
-    """Dereference the cached model and free GPU memory."""
+    """Dereference the cached model and free GPU/MPS memory."""
     global _model, _processor, _device, _precision
+    dev = _device
     _model = None
     _processor = None
     _device = None
     _precision = None
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if dev is not None:
+        empty_cache(dev)
+    else:
+        # best-effort: drain whichever backend is active
+        from ._device import _DEVICE
+        empty_cache(_DEVICE)
 
 
 def score_laion(image_path: str) -> LaionScoreResult:
@@ -153,7 +162,7 @@ def score_laion(image_path: str) -> LaionScoreResult:
             img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
         tensor = preprocess(img).unsqueeze(0).to(device)
-        if device.type == "cuda":
+        if device.type in ("cuda", "mps"):
             tensor = tensor.to(get_dtype(precision))
 
         with torch.no_grad():

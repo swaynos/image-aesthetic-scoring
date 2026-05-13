@@ -14,11 +14,13 @@ GPU-backed Python library for image aesthetic/preference scoring using four mode
 ## Requirements
 
 - Python 3.11
-- NVIDIA GPU, CUDA 12.1+
-- **Dev tier:** RTX 4050 6 GB — all four models tested and passing
-- **Production tier:** ≥16 GB VRAM recommended for headroom
+- **CUDA (Linux, primary):** NVIDIA GPU, CUDA 12.1+
+  - RTX 4050 6 GB — all four models tested and passing
+- **MPS (macOS, supported):** Apple Silicon (M1/M2/M3/M4), macOS 13+, PyTorch ≥ 2.1
 
 ## Installation
+
+### Linux (CUDA)
 
 ```bash
 pip install git+https://github.com/openai/CLIP.git   # FGAesQ dependency
@@ -27,15 +29,22 @@ pip install torch torchvision transformers accelerate open_clip_torch \
     Pillow numpy hpsv2 scikit-image huggingface_hub pytest pytest-mock
 ```
 
-> **Note:** The `hpsv2` PyPI package ships without the BPE vocab file needed by its
-> vendored tokenizer. Copy it from `open_clip` if needed:
-> ```bash
-> cp $(python -c "import open_clip, os; print(os.path.dirname(open_clip.__file__))")/bpe_simple_vocab_16e6.txt.gz \
->    $(python -c "import hpsv2, os; print(os.path.dirname(hpsv2.__file__))")/src/open_clip/
-> ```
-> Our `hpsv2.py` module bypasses the `hpsv2` package internals entirely and uses
-> `open_clip` directly, so this workaround is only needed if you use the `hpsv2`
-> CLI separately.
+### macOS — Apple Silicon (M1/M2/M3/M4)
+
+```bash
+pip install git+https://github.com/openai/CLIP.git   # FGAesQ dependency
+pip install -e ".[dev]"                               # hpsv2 excluded automatically
+pip install torch torchvision transformers accelerate open_clip_torch \
+    Pillow numpy scikit-image huggingface_hub pytest pytest-mock
+```
+
+> **Note:** The `hpsv2` PyPI package is excluded on macOS via a `sys_platform != 'darwin'`
+> marker. The library's `hpsv2.py` uses `open_clip` directly and does not need it.
+
+> **MPS fallback:** On first import when Apple Silicon is detected, the library
+> automatically sets `PYTORCH_ENABLE_MPS_FALLBACK=1`. This allows ops that lack MPS
+> kernels to run on CPU transparently. You can pre-set this variable before running
+> if you want explicit control: `export PYTORCH_ENABLE_MPS_FALLBACK=1`.
 
 ## Quick Start
 
@@ -78,8 +87,18 @@ hpsv2_unload()
 ```
 
 **Defaults:**
-- Precision: fp16 on CUDA (FGAesQ uses fp32 internally)
+- Precision: fp16 on CUDA and MPS (FGAesQ uses fp32 internally on all backends)
 - Max input edge: 1024 px (images are downscaled before inference)
+- MPS fallback env var: set automatically to `PYTORCH_ENABLE_MPS_FALLBACK=1`
+
+**Expected latency (warm cache, weight download excluded):**
+
+| Model | CUDA (RTX 4050) | MPS (M1 class) |
+|---|---|---|
+| LAION | < 30 s | < 90 s |
+| PickScore | < 60 s | < 180 s |
+| HPSv2 | < 60 s | < 180 s |
+| FGAesQ | < 60 s | < 180 s |
 
 ## Verification
 

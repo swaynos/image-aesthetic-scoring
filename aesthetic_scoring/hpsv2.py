@@ -4,12 +4,18 @@ HPSv2 scorer.
 Implements HPSv2.1 inference directly using open_clip + huggingface_hub,
 without using the `hpsv2` PyPI package internals (which loads full model into CPU RAM).
 
-Model: ViT-H-14 (CLIP-H) fine-tuned checkpoint from xswu/HPSv2 (HPS_v2.1.pt).
-The model is loaded to GPU directly to minimise peak CPU RAM usage.
+Model: ViT-H-14 (CLIP-H) fine-tuned checkpoint from xswu/HPSv2 (HPS_v2.1_compressed.pt).
+The model is loaded to the active device directly to minimise peak CPU RAM usage.
 
-Precision default: fp16 on CUDA.
+Precision default: fp16 on CUDA and MPS; fp32 on CPU.
 Max input edge: 1024 px.
-Typical VRAM: ~3.5 GB fp16.
+Typical memory: ~3.5 GB fp16 (CUDA/MPS unified).
+
+MPS notes:
+- PYTORCH_ENABLE_MPS_FALLBACK=1 is set automatically by _device.py.
+- torch.autocast is NOT used on MPS (not supported for all ops); the model is
+  cast to fp16 at load time instead.
+- Image tensors are explicitly cast to fp16 before inference on MPS.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from typing import Optional
 import torch
 from PIL import Image
 
-from ._device import get_device, get_precision, get_dtype, inference_guard
+from ._device import get_device, get_precision, get_dtype, inference_guard, empty_cache
 from .errors import ModelLoadError
 from .types import HPSv2ScoreResult
 
@@ -78,7 +84,7 @@ def _load():
 
         model.load_state_dict(state_dict, strict=False)
         model = model.to(dev)
-        if dev.type == "cuda":
+        if dev.type in ("cuda", "mps"):
             model = model.to(dtype)
         model.eval()
 
@@ -98,13 +104,17 @@ def _load():
 
 def unload() -> None:
     global _model, _preprocess, _tokenizer, _device, _precision
+    dev = _device
     _model = None
     _preprocess = None
     _tokenizer = None
     _device = None
-    _precision = "fp16"
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    _precision = None
+    if dev is not None:
+        empty_cache(dev)
+    else:
+        from ._device import _DEVICE
+        empty_cache(_DEVICE)
 
 
 def score_hpsv2(image_path: str, prompt: str) -> HPSv2ScoreResult:
@@ -144,18 +154,22 @@ def score_hpsv2(image_path: str, prompt: str) -> HPSv2ScoreResult:
             img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
         image_tensor = preprocess(img).unsqueeze(0).to(device)
-        if device.type == "cuda":
+        if device.type in ("cuda", "mps"):
             image_tensor = image_tensor.to(get_dtype(precision))
 
         text_tokens = tokenizer([prompt]).to(device)
 
         with torch.no_grad():
-            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == "cuda")):
+            # autocast is CUDA-only; on MPS the model is already in fp16 from load time
+            if device.type == "cuda":
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True):
+                    outputs = model(image_tensor, text_tokens)
+            else:
                 outputs = model(image_tensor, text_tokens)
-                image_features = outputs["image_features"]
-                text_features = outputs["text_features"]
-                logits = image_features @ text_features.T
-                score_val = float(torch.diagonal(logits).cpu().float().item())
+            image_features = outputs["image_features"]
+            text_features = outputs["text_features"]
+            logits = image_features @ text_features.T
+            score_val = float(torch.diagonal(logits).cpu().float().item())
 
         latency_ms = (time.perf_counter() - t0) * 1000.0
 

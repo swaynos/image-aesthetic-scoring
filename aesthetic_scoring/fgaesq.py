@@ -7,10 +7,18 @@ Weights: huggingface.co/yzc002/FGAesQ
 This module inlines the FGAesQ model and DiffToken preprocessor from the
 upstream source so the package has no external source-code dependency.
 
-Precision default: fp32 (model uses fp32 internally via CLIP float()).
+Precision: fp32 (model uses fp32 internally via CLIP float()). This applies on
+  all backends including MPS; fp16 is not used for FGAesQ to maintain numerical
+  stability of the CLIP backbone's float() calls.
 Max input edge: applied via DiffToken's ensure_large_image_size (2048 default upstream),
   we cap at 1024 for the 6 GB VRAM budget.
-Typical VRAM: ~2-3 GB.
+Typical memory: ~2-3 GB.
+
+MPS notes:
+- PYTORCH_ENABLE_MPS_FALLBACK=1 is set automatically by _device.py.
+- Model runs fp32 on MPS; no dtype cast is applied.
+- numpy-based scale embedding lookup in _FGAesQModel._add_scale_embed uses
+  CPU tensors transiently, which is compatible with MPS.
 
 subscores keys returned: {"dist_score": float, "raw_score": float}
   dist_score = weighted mean of 10-bin distribution
@@ -35,7 +43,7 @@ import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 
-from ._device import get_device, inference_guard
+from ._device import get_device, inference_guard, empty_cache
 from .errors import ModelLoadError
 from .types import FGAesQScoreResult
 
@@ -455,12 +463,16 @@ def _load():
 
 def unload() -> None:
     global _model, _preprocessor, _device, _precision
+    dev = _device
     _model = None
     _preprocessor = None
     _device = None
     _precision = "fp32"
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if dev is not None:
+        empty_cache(dev)
+    else:
+        from ._device import _DEVICE
+        empty_cache(_DEVICE)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
