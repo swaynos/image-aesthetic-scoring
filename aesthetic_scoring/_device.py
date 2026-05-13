@@ -71,8 +71,14 @@ def empty_cache(device: torch.device) -> None:
     if device.type == "cuda":
         torch.cuda.empty_cache()
     elif device.type == "mps":
-        # torch.mps.empty_cache() available since torch 2.0
-        if hasattr(torch.mps, "empty_cache"):
+        # Guard for hosts where torch is built with MPS symbols but backend
+        # is unavailable at runtime (calling empty_cache would raise RuntimeError).
+        if (
+            hasattr(torch, "mps")
+            and hasattr(torch.mps, "empty_cache")
+            and torch.backends.mps.is_built()
+            and torch.backends.mps.is_available()
+        ):
             torch.mps.empty_cache()
     # cpu: no-op
 
