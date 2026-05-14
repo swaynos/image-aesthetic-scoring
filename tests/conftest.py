@@ -1,28 +1,9 @@
-"""Pytest configuration: fixtures and markers."""
-import os
-import pytest
+"""Pytest configuration: fixtures and path constants."""
+from pathlib import Path
 
-FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
-PHOTO_A = os.path.join(FIXTURE_DIR, "photo_a.jpg")
-PHOTO_B = os.path.join(FIXTURE_DIR, "photo_b.jpg")
-PROMPT = "a vibrant colorful gradient abstract image"
+FIXTURES = Path(__file__).parent / "fixtures"
 
-
-@pytest.fixture
-def photo_a():
-    return PHOTO_A
-
-
-@pytest.fixture
-def photo_b():
-    return PHOTO_B
-
-
-@pytest.fixture
-def fixture_prompt():
-    return PROMPT
-
-
-@pytest.fixture
-def two_photos():
-    return [PHOTO_A, PHOTO_B]
+# ── v1 aesthetic scoring fixtures ─────────────────────────────────────────────
+PHOTO_A = str(FIXTURES / "photo_a.jpg")
+PHOTO_B = str(FIXTURES / "photo_b.jpg")
+PROMPT  = (FIXTURES / "prompt.txt").read_text().strip()

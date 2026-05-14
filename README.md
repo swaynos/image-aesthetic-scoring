@@ -1,6 +1,15 @@
 # aesthetic_scoring
 
-GPU-backed Python library for image aesthetic/preference scoring using four models.
+GPU-backed Python library for image aesthetic/preference scoring (v1), and a
+CPU-based reference-vs-derivative image comparison scorer (v2).
+
+- **v1** — four scoring models with a uniform typed API.  Device selected
+  automatically: CUDA → MPS → CPU.  Weights are loaded lazily on first call;
+  each module exposes `unload()` to free VRAM between models.
+- **v2** — `score_reference_comparison` measures structural and perceptual
+  divergence between a reference image and any derivative.  CPU-only, no model
+  weights required by default (passthrough mode).  Pass `model_path=` to use a
+  trained model from [aesthetic-model-training](https://github.com/anomalyco/aesthetic-model-training).
 
 ## Models
 
@@ -47,6 +56,10 @@ pip install torch torchvision transformers accelerate open_clip_torch \
 > if you want explicit control: `export PYTORCH_ENABLE_MPS_FALLBACK=1`.
 
 ## Quick Start
+
+Each v1 function returns a typed dataclass with common metadata fields
+(`image_id`, `model_name`, `model_version`, `latency_ms`, `device`, `precision`)
+plus the model-specific score fields shown below.
 
 ```python
 from aesthetic_scoring import score_laion, score_pickscore, score_hpsv2, score_fgaesq
@@ -127,6 +140,55 @@ HPSv2 weights are downloaded from `xswu/HPSv2` on HuggingFace Hub
 (`HPS_v2.1_compressed.pt`). The `hpsv2` PyPI package is listed as a dependency
 but `aesthetic_scoring/hpsv2.py` uses `open_clip` directly for inference to
 avoid the package's CPU-RAM overhead.
+
+
+## v2: Reference-Based Image Comparison
+
+`score_reference_comparison` measures the structural and perceptual divergence
+between a **reference image** and any **derivative** of it, with optional
+mask-aware regional breakdown.
+
+Applicable to any workflow that produces derivative images, including:
+- iterative inpainting / editing
+- generative model outputs vs. conditioning image
+- encode → decode round-trips
+- upscaling / super-resolution
+- style transfer vs. content source
+- compression / codec A/B testing
+- render frame vs. golden frame regression
+
+```python
+from aesthetic_scoring import score_reference_comparison
+
+result = score_reference_comparison(
+    reference_path="source.png",
+    derivative_path="output.png",
+    mask_policy="custom_intent",          # whole_image|subject|background|custom_intent|none
+    intent_mask_path="region_mask.png",   # PNG 0/255 — white = region of interest
+    prior_reference_path="earlier.png",   # optional earlier reference for consistency scoring
+    model_path="baseline_model.json",     # optional trained model from aesthetic-model-training
+)
+
+print(result.quality_score)               # float [0, 1] — structural fidelity; higher = closer
+print(result.divergence_score)            # float [0, 1] — overall divergence; higher = more different
+print(result.artifact_score)              # float [0, 1] — perceptual/technical artefact severity
+print(result.temporal_consistency_score)  # float [0, 1] — stability vs prior reference
+print(result.regional_breakdown)          # dict of per-region raw metrics
+```
+
+`prior_reference_path` and the mask parameters are optional.  `step_index` and
+`intent_state` on the underlying `RegionalFeatureVector` are caller-defined
+labels with no fixed semantics — use them to encode sequence position (edit pass,
+frame number, variant index) and group/category (prompt variant, A/B group, style
+bucket) as appropriate for your workflow.
+
+Without `model_path`, scores are derived directly from image features (passthrough mode)
+— no training data or external dependencies required.  To produce a trained model, use
+[aesthetic-model-training](https://github.com/anomalyco/aesthetic-model-training), which
+owns the dataset builder, pseudo-label generation, and baseline training scripts.  The two
+repos are fully decoupled: training produces a `baseline_model.json` artefact; this library
+only reads it at runtime and never imports from the training repo.
+
 
 ## Future Scope (v2+)
 
