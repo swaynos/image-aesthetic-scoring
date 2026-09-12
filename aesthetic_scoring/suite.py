@@ -29,7 +29,16 @@ def score_images(
     """
     if not isinstance(image_paths, (list, tuple)) or not image_paths:
         raise ValueError("image_paths must be a non-empty sequence of paths")
-    selected = tuple(models or DEFAULT_MODELS)
+    missing = [path for path in image_paths if not Path(path).exists()]
+    if missing:
+        raise FileNotFoundError(f"Image(s) not found: {', '.join(missing)}")
+    if models is None:
+        selected = tuple(DEFAULT_MODELS)
+    else:
+        # Preserve caller order but drop duplicates: a repeated model would
+        # otherwise load and score twice, and the later result would silently
+        # overwrite the earlier one in ``results``.
+        selected = tuple(dict.fromkeys(models))
     unknown = set(selected).difference(DEFAULT_MODELS)
     if unknown:
         raise ValueError(f"Unknown model(s): {', '.join(sorted(unknown))}")
@@ -65,11 +74,16 @@ def score_images(
                 results[model] = [score_imagereward(list(image_paths), evaluation_prompt)]
             finally:
                 unload_imagereward()
-        else:
+        elif model == "clipscore":
             try:
                 results[model] = [score_clipscore(list(image_paths), evaluation_prompt)]
             finally:
                 unload_clipscore()
+        else:
+            # Unreachable while every DEFAULT_MODELS entry has a branch above.
+            # Guards against a model being added to DEFAULT_MODELS without a
+            # dispatch branch, which previously fell through to clipscore.
+            raise ValueError(f"No scoring branch for model: {model}")
 
     return ImageScoreReport(
         image_ids=[Path(path).name for path in image_paths],
