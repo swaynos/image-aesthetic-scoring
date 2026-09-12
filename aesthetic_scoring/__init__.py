@@ -1,15 +1,4 @@
-"""
-aesthetic_scoring — GPU-backed image aesthetic and comparison scoring library.
-
-Models (v1):
-  - LAION-Aesthetics v2.5  → score_laion
-  - PickScore              → score_pickscore
-  - HPSv2                  → score_hpsv2
-  - FGAesQ                 → score_fgaesq
-
-v2:
-  - score_reference_comparison
-"""
+"""GPU-backed image scoring suite for aesthetics, preferences, and alignment."""
 
 from .errors import GpuMemoryError, ModelInferenceError, ModelLoadError
 from .types import (
@@ -18,29 +7,35 @@ from .types import (
     HPSv2ScoreResult,
     LaionScoreResult,
     PickScoreResult,
-    ReferenceComparisonResult,
+    CLIPScoreResult,
+    ImageRewardScoreResult,
+    ImageScoreReport,
 )
 from .laion import score_laion
 from .pickscore import score_pickscore
 from .hpsv2 import score_hpsv2
 from .fgaesq import score_fgaesq
-from .intent_api import score_reference_comparison
+from .clipscore import score_clipscore
+from .imagereward import score_imagereward
+from .suite import score_images
 
 __all__ = [
-    # v1 scoring functions
     "score_laion",
     "score_pickscore",
     "score_hpsv2",
     "score_fgaesq",
-    # v2 scoring function
-    "score_reference_comparison",
+    "score_clipscore",
+    "score_imagereward",
+    "score_images",
     # result types
     "BaseScoreResult",
     "LaionScoreResult",
     "PickScoreResult",
     "HPSv2ScoreResult",
     "FGAesQScoreResult",
-    "ReferenceComparisonResult",
+    "CLIPScoreResult",
+    "ImageRewardScoreResult",
+    "ImageScoreReport",
     # exceptions
     "GpuMemoryError",
     "ModelInferenceError",

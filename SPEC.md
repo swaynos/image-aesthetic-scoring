@@ -1,110 +1,71 @@
-# SPEC.md: image-aesthetic-scoring
+# image-aesthetic-scoring Specification
 
 ## Version
-2.1.0
+
+2.0.0
 
 ## Objective
-Provide a GPU-backed Python library for image aesthetic and preference scoring
-(v1), and a CPU-based reference-vs-derivative image comparison scorer (v2).
 
-## Existing API Stability (Required)
-These APIs must remain backward-compatible:
-- `score_laion(image_path)`
-- `score_pickscore(image_paths, prompt)`
-- `score_hpsv2(image_path, prompt)`
-- `score_fgaesq(image_path)`
-- `score_reference_comparison(reference_path, derivative_path, ...)`
+Provide a lightweight, GPU-backed suite of image aesthetic, preference, and
+prompt-alignment scorers for ranking generated-image candidates.
 
-## v2 Thesis
-A single whole-image aesthetic score cannot distinguish *how* one image differs
-from another.  The v2 scorer measures divergence between a reference image and
-any derivative of it, combining:
-- global structural/perceptual divergence
-- mask-aware inside-intent vs outside-intent regional behaviour
-- boundary-ring seam stability
-- tile-level local divergence
-- optional temporal consistency against an earlier reference in the same group
+## Principles
 
-## In Scope
-- v1: GPU-backed aesthetic and preference scorers (LAION, PickScore, HPSv2, FGAesQ).
-- v2: Deterministic reference-vs-derivative feature extraction (`features.py`, `intent.py`).
-- v2: Runtime comparison API (`intent_api.py`) returning `ReferenceComparisonResult`.
+- Aesthetic appeal, human preference, and prompt alignment are distinct
+  measurements. The library returns raw outputs and never creates an arbitrary
+  combined score.
+- Prompt-conditioned scorers require an ordinary-language evaluation prompt.
+  Private LoRA trigger tokens are generation metadata, not semantic inputs to
+  another model's frozen text encoder.
+- Models load lazily and the suite unloads each selected model before the next
+  one loads, targeting a 6 GiB VRAM budget.
+- ImageReward is an optional dependency. All other scorers are core features.
 
-## Out of Scope (lives in aesthetic-model-training)
-- Dataset builder, pseudo-label generation, baseline model training and evaluation.
-- Derivation-sequence manifests and oscillating-intent fixtures.
+## Public API
 
-The two repos are fully decoupled: `aesthetic-model-training` produces a
-`baseline_model.json` artefact; this library reads it via `model_path=` at
-runtime and does not import from the training repo.
+- `score_laion(image_path) -> LaionScoreResult`
+- `score_fgaesq(image_path) -> FGAesQScoreResult`
+- `score_pickscore(image_paths, prompt) -> PickScoreResult`
+- `score_hpsv2(image_path, prompt) -> HPSv2ScoreResult`
+- `score_imagereward(image_paths, prompt) -> ImageRewardScoreResult`
+- `score_clipscore(image_paths, prompt) -> CLIPScoreResult`
+- `score_images(image_paths, evaluation_prompt=None, models=None) -> ImageScoreReport`
 
-## Out of Scope (Future Plugin Modules)
-- Facial-quality scoring.
-- Identity-preservation scoring.
-- Anatomy plausibility (hands, feet, pose, proportions).
-- Task-specific body-part modules.
-- Detector-owned segmentation as a required dependency.
-- Human labeling or manual classification workflows.
+`score_images` runs selected models in the caller's order. It requires
+`evaluation_prompt` when selecting PickScore, HPSv2, ImageReward, or CLIPScore.
 
-## Modules
-`aesthetic_scoring/` contains:
-- `laion.py`, `pickscore.py`, `hpsv2.py`, `fgaesq.py` — v1 scorers
-- `features.py` — `extract_reference_features()` → `RegionalFeatureVector`
-- `intent.py` — mask loading, policies, boundary ring, tile grid
-- `intent_api.py` — `score_reference_comparison()` runtime entry point
-- `types.py` — all result dataclasses
-- `errors.py` — shared exceptions
-- `_device.py` — device detection and OOM wrapping
+## Included Models
 
-## Typed Schemas
-Exported from `aesthetic_scoring/types.py`:
-- `LaionScoreResult`, `PickScoreResult`, `HPSv2ScoreResult`, `FGAesQScoreResult`
-- `RegionalFeatureVector`
-- `ReferenceComparisonResult`
+| Identifier | Model | Prompt required | Output meaning |
+|---|---|---:|---|
+| `laion` | LAION-Aesthetics v2.5 | No | Broad aesthetic score |
+| `fgaesq` | FGAesQ | No | Fine-grained aesthetic score |
+| `pickscore` | PickScore v1 | Yes | Candidate-relative preference logits and probabilities |
+| `hpsv2` | HPSv2.1 | Yes | Prompt-conditioned preference score |
+| `imagereward` | ImageReward v1.0 | Yes | Prompt-conditioned expert-preference reward |
+| `clipscore` | CLIP ViT-B/32 | Yes | Image-text cosine similarity |
 
-## Feature Extraction Contract
-`extract_reference_features(reference_path, derivative_path, step_index=0, intent_state='', prior_reference_path=None, intent_mask_path=None, subject_mask_path=None, mask_policy='none') -> RegionalFeatureVector`
+## Out of Scope
 
-`step_index` and `intent_state` are caller-defined identifiers with no fixed
-semantics.  Common uses: `step_index` as a sequence position (edit pass, frame
-number, variant index); `intent_state` as a group/category label (prompt variant,
-style bucket, A/B group).
-
-Metrics produced:
-- global: SSIM, LPIPS proxy, RGB L1 delta, edge retention, HF retention, grad ratio, banding
-- mask-aware: inside/outside SSIM, LPIPS proxy, RGB L1, edge retention
-- boundary: seam intensity, edge continuity across ring
-- tile: mean, worst, variance, high-risk count
-- temporal: SSIM, LPIPS proxy, RGB L1 vs prior reference
-
-## Runtime API Contract
-`score_reference_comparison(reference_path, derivative_path, prior_reference_path=None, intent_mask_path=None, subject_mask_path=None, mask_policy='none', model_path=None) -> ReferenceComparisonResult`
-
-Result fields:
-- `quality_score` — structural fidelity to reference; higher = closer
-- `divergence_score` — overall divergence; higher = more different
-- `artifact_score` — perceptual/technical artefact severity
-- `temporal_consistency_score` — stability vs prior reference
-- `regional_breakdown` — per-region raw metrics dict
-- `feature_version`, `model_version`, `latency_ms`, `device`
-
-`model_path` is optional.  If omitted, scores are derived from features directly
-(passthrough).  Pass a `baseline_model.json` from aesthetic-model-training to
-use learned weights.
+- Reference-vs-derivative comparison and edit-degradation metrics
+- Dataset construction or model training
+- Technical IQA models, including TOPIQ, MUSIQ, MANIQA, and LIQE
+- Q-ReAlign, VisionReward, HPSv3, and other models that exceed the lightweight
+  hardware target or require an unresolved license decision
+- Identity, face, anatomy, and body-part assessment
 
 ## Acceptance Criteria
-1. v1 scorer imports remain unchanged and passing.
-2. `from aesthetic_scoring import score_reference_comparison` succeeds.
-3. All unit tests pass without GPU.
-4. Runtime API returns a typed, JSON-serializable result.
 
-## Verification Commands
+1. All direct scorer functions and result types import without loading weights.
+2. The suite rejects unknown model identifiers and prompt-conditioned requests
+   without an evaluation prompt.
+3. The suite unloads every selected model after its result is produced.
+4. `ImageScoreReport` is JSON serializable through `dataclasses.asdict`.
+5. Unit tests pass without a GPU, model weights, or network access.
+
+## Verification
+
 ```bash
-set -euo pipefail
-cd /home/bendy/Git/image-aesthetic-scoring
-
-python -c "from aesthetic_scoring import score_laion, score_pickscore, score_hpsv2, score_fgaesq"
-python -c "from aesthetic_scoring import score_reference_comparison"
-
 python -m pytest tests/unit -q
+python -m pytest tests/smoke -q
 ```

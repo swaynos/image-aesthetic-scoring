@@ -6,11 +6,22 @@ def test_package_imports():
 
 
 def test_scoring_functions_exported():
-    from aesthetic_scoring import score_laion, score_pickscore, score_hpsv2, score_fgaesq
+    from aesthetic_scoring import (
+        score_clipscore,
+        score_fgaesq,
+        score_hpsv2,
+        score_imagereward,
+        score_laion,
+        score_pickscore,
+        score_images,
+    )
     assert callable(score_laion)
     assert callable(score_pickscore)
     assert callable(score_hpsv2)
     assert callable(score_fgaesq)
+    assert callable(score_clipscore)
+    assert callable(score_imagereward)
+    assert callable(score_images)
 
 
 def test_result_types_exported():
@@ -18,7 +29,10 @@ def test_result_types_exported():
         LaionScoreResult,
         PickScoreResult,
         HPSv2ScoreResult,
+        ImageRewardScoreResult,
+        CLIPScoreResult,
         FGAesQScoreResult,
+        ImageScoreReport,
     )
 
 
@@ -32,5 +46,7 @@ def test_types_importable_from_submodule():
         LaionScoreResult,
         PickScoreResult,
         HPSv2ScoreResult,
+        ImageRewardScoreResult,
+        CLIPScoreResult,
         FGAesQScoreResult,
     )

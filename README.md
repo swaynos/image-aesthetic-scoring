@@ -1,197 +1,133 @@
 # aesthetic_scoring
 
-GPU-backed Python library for image aesthetic/preference scoring (v1), and a
-CPU-based reference-vs-derivative image comparison scorer (v2).
-
-- **v1** — four scoring models with a uniform typed API.  Device selected
-  automatically: CUDA → MPS → CPU.  Weights are loaded lazily on first call;
-  each module exposes `unload()` to free VRAM between models.
-- **v2** — `score_reference_comparison` measures structural and perceptual
-  divergence between a reference image and any derivative.  CPU-only, no model
-  weights required by default (passthrough mode).  Pass `model_path=` to use a
-  trained model from [aesthetic-model-training](https://github.com/anomalyco/aesthetic-model-training).
+GPU-backed Python scoring suite for ranking generated images. It exposes raw
+scores from several models with different purposes. It does not combine them
+into one "quality" number.
 
 ## Models
 
-| Model | Function | VRAM (fp16) | Notes |
-|---|---|---|---|
-| LAION-Aesthetics v2.5 | `score_laion` | ~1.6 GiB | CLIP ViT-L/14 + MLP |
-| PickScore | `score_pickscore` | ~3.8 GiB | CLIP-H/14, multi-image vs prompt |
-| HPSv2.1 | `score_hpsv2` | ~3.7 GiB | CLIP-H/14 preference model |
-| FGAesQ | `score_fgaesq` | ~0.6 GiB | CLIP ViT-B/16 fine-grained aesthetic |
+| Model | Prompt | What it measures | Typical VRAM |
+|---|---:|---|---:|
+| LAION-Aesthetics v2.5 | No | Broad visual appeal | 1.6 GiB |
+| FGAesQ | No | Fine-grained aesthetic score | 2-3 GiB |
+| PickScore | Yes | Relative human preference for candidates | 3.8 GiB |
+| HPSv2.1 | Yes | General prompt-conditioned preference | 3.7 GiB |
+| ImageReward | Yes | Expert-trained text-to-image reward | optional |
+| CLIPScore | Yes | Raw image-text alignment, not aesthetic quality | under 1 GiB |
+
+Each model has its own scale, biases, and training data. Compare scores only
+within the same model, prompt, and candidate set.
 
 ## Requirements
 
 - Python 3.11
-- **CUDA (Linux, primary):** NVIDIA GPU, CUDA 12.1+
-  - RTX 4050 6 GB — all four models tested and passing
-- **MPS (macOS, supported):** Apple Silicon (M1/M2/M3/M4), macOS 13+, PyTorch ≥ 2.1
+- NVIDIA CUDA 12.1+ on Linux, or Apple Silicon with MPS
+- A GPU with 6 GiB VRAM can run the built-in models one at a time
 
 ## Installation
 
-### Linux (CUDA)
-
 ```bash
-pip install git+https://github.com/openai/CLIP.git   # FGAesQ dependency
-pip install -e ".[dev]" --no-deps                     # Install package
-pip install torch torchvision transformers accelerate open_clip_torch \
-    Pillow numpy hpsv2 scikit-image huggingface_hub pytest pytest-mock
+pyenv virtualenv 3.11.10 image-aesthetic-scoring
+pyenv local image-aesthetic-scoring
+python -m pip install -e ".[dev]"
+
+# Optional prompt-conditioned reward model
+python -m pip install -e ".[imagereward]"
 ```
 
-### macOS — Apple Silicon (M1/M2/M3/M4)
-
-```bash
-pip install git+https://github.com/openai/CLIP.git   # FGAesQ dependency
-pip install -e ".[dev]"                               # hpsv2 excluded automatically
-pip install torch torchvision transformers accelerate open_clip_torch \
-    Pillow numpy scikit-image huggingface_hub pytest pytest-mock
-```
-
-> **Note:** The `hpsv2` PyPI package is excluded on macOS via a `sys_platform != 'darwin'`
-> marker. The library's `hpsv2.py` uses `open_clip` directly and does not need it.
-
-> **MPS fallback:** On first import when Apple Silicon is detected, the library
-> automatically sets `PYTORCH_ENABLE_MPS_FALLBACK=1`. This allows ops that lack MPS
-> kernels to run on CPU transparently. You can pre-set this variable before running
-> if you want explicit control: `export PYTORCH_ENABLE_MPS_FALLBACK=1`.
+Weights download lazily on first use. ImageReward is optional because its
+upstream package has a larger dependency set.
 
 ## Quick Start
 
-Each v1 function returns a typed dataclass with common metadata fields
-(`image_id`, `model_name`, `model_version`, `latency_ms`, `device`, `precision`)
-plus the model-specific score fields shown below.
-
 ```python
-from aesthetic_scoring import score_laion, score_pickscore, score_hpsv2, score_fgaesq
+from aesthetic_scoring import score_images
 
-# LAION — single image, no prompt
-result = score_laion("my_image.jpg")
-print(result.aesthetic_score)   # float, ~1-10 scale
+report = score_images(
+    ["candidate-a.png", "candidate-b.png"],
+    evaluation_prompt="a professional portrait with short red hair and cinematic lighting",
+)
 
-# PickScore — compare images against a prompt
-result = score_pickscore(["img_a.jpg", "img_b.jpg"], "a cat in space")
-print(result.probabilities)     # [0.72, 0.28] — sums to 1.0
-print(result.ranked_image_ids)  # ["img_a.jpg", "img_b.jpg"]
-
-# HPSv2 — image + prompt preference
-result = score_hpsv2("my_image.jpg", "a cat in space")
-print(result.preference_score)  # float ~0.2-0.3 typical range
-
-# FGAesQ — fine-grained aesthetic quality
-result = score_fgaesq("my_image.jpg")
-print(result.aesthetic_score)   # float 1-10 range
-print(result.technical_score)   # float 1-5 range (lower bins)
-print(result.subscores)         # {"bin_1": ..., ..., "bin_10": ..., "raw_score": ...}
+for model, results in report.results.items():
+    print(model, results)
 ```
 
-## Memory Management
-
-Models are loaded lazily on first call. Call `unload()` to free VRAM between models:
+The suite runs models sequentially and unloads each one before loading the
+next. Select a subset to reduce run time or skip optional dependencies:
 
 ```python
-from aesthetic_scoring.laion import unload as laion_unload
-from aesthetic_scoring.hpsv2 import unload as hpsv2_unload
-
-result = score_laion("img.jpg")
-laion_unload()   # free ~1.6 GiB before loading next model
-
-result2 = score_hpsv2("img.jpg", "prompt")
-hpsv2_unload()
+report = score_images(
+    ["candidate-a.png", "candidate-b.png"],
+    evaluation_prompt="a professional portrait with short red hair",
+    models=["laion", "fgaesq", "pickscore", "clipscore"],
+)
 ```
 
-**Defaults:**
-- Precision: fp16 on CUDA and MPS (FGAesQ uses fp32 internally on all backends)
-- Max input edge: 1024 px (images are downscaled before inference)
-- MPS fallback env var: set automatically to `PYTORCH_ENABLE_MPS_FALLBACK=1`
+## Direct APIs
 
-**Expected latency (warm cache, weight download excluded):**
+```python
+from aesthetic_scoring import (
+    score_clipscore,
+    score_fgaesq,
+    score_hpsv2,
+    score_imagereward,
+    score_laion,
+    score_pickscore,
+)
 
-| Model | CUDA (RTX 4050) | MPS (M1 class) |
-|---|---|---|
-| LAION | < 30 s | < 90 s |
-| PickScore | < 60 s | < 180 s |
-| HPSv2 | < 60 s | < 180 s |
-| FGAesQ | < 60 s | < 180 s |
+score_laion("image.png")
+score_fgaesq("image.png")
+score_pickscore(["a.png", "b.png"], "a studio portrait")
+score_hpsv2("image.png", "a studio portrait")
+score_imagereward(["a.png", "b.png"], "a studio portrait")
+score_clipscore(["a.png", "b.png"], "a studio portrait")
+```
+
+Call `unload()` from an individual model module when using direct APIs in a
+long-running process. `score_images()` does this automatically.
+
+## Custom LoRA Triggers
+
+Do not treat a private LoRA trigger such as `fwbugh4d5` as an evaluation
+prompt. Prompt-conditioned scorers use separate frozen text encoders, so they
+do not know what the trigger means. Store two fields instead:
+
+- **Generation prompt:** may contain the private trigger.
+- **Evaluation prompt:** describes the desired visible result in ordinary
+  language, such as "a cinematic portrait of Jane with short red hair."
+
+Use LAION and FGAesQ alongside prompt-conditioned models when the special
+token cannot be described fully. Neither can verify that a LoRA-specific
+identity or style was reproduced; that needs a reference or a dedicated model.
+
+## Scope
+
+This project scores images and ranks candidates. It does not provide:
+
+- A universal combined score
+- Technical image-quality assessment models such as TOPIQ or MANIQA
+- Reference-based edit degradation scoring
+- Identity, face, anatomy, or body-part scoring
+
+Git history retains the former reference-comparison experiment.
 
 ## Verification
 
 ```bash
-# 1. Import surface check
-python -c "import aesthetic_scoring; from aesthetic_scoring import score_laion, score_pickscore, score_hpsv2, score_fgaesq; from aesthetic_scoring.errors import ModelInferenceError, GpuMemoryError, ModelLoadError; from aesthetic_scoring.types import LaionScoreResult, PickScoreResult, HPSv2ScoreResult, FGAesQScoreResult"
-
-# 2. Unit tests (no GPU required)
 python -m pytest tests/unit -q
-
-# 3. GPU smoke tests (requires CUDA device)
-python -m pytest tests/smoke -q
+python -m pytest tests/smoke -q  # downloads weights and requires a GPU
 ```
 
-## External Dependency Commit SHAs
+## Model Sources
 
-| Dependency | Source | Pinned SHA |
-|---|---|---|
-| FG-IAA (FGAesQ source) | github.com/yzc-ippl/FG-IAA | `4bfd40fff7d935de1a613e3650815e0bb7a952e2` |
-| HPSv2 | github.com/tgxs002/HPSv2 | `866735ecaae999fa714bd9edfa05aa2672669ee3` |
+- LAION-Aesthetics: `christophschuhmann/improved-aesthetic-predictor`
+- PickScore: `yuvalkirstain/PickScore_v1`
+- HPSv2.1: `xswu/HPSv2`
+- FGAesQ: `yzc002/FGAesQ`
+- ImageReward: `THUDM/ImageReward`
+- CLIPScore: CLIP ViT-B/32 cosine similarity
 
-FGAesQ model code is inlined in `aesthetic_scoring/fgaesq.py` from the upstream
-source at the commit above (no pip dependency on FG-IAA).
+## License
 
-HPSv2 weights are downloaded from `xswu/HPSv2` on HuggingFace Hub
-(`HPS_v2.1_compressed.pt`). The `hpsv2` PyPI package is listed as a dependency
-but `aesthetic_scoring/hpsv2.py` uses `open_clip` directly for inference to
-avoid the package's CPU-RAM overhead.
-
-
-## v2: Reference-Based Image Comparison
-
-`score_reference_comparison` measures the structural and perceptual divergence
-between a **reference image** and any **derivative** of it, with optional
-mask-aware regional breakdown.
-
-Applicable to any workflow that produces derivative images, including:
-- iterative inpainting / editing
-- generative model outputs vs. conditioning image
-- encode → decode round-trips
-- upscaling / super-resolution
-- style transfer vs. content source
-- compression / codec A/B testing
-- render frame vs. golden frame regression
-
-```python
-from aesthetic_scoring import score_reference_comparison
-
-result = score_reference_comparison(
-    reference_path="source.png",
-    derivative_path="output.png",
-    mask_policy="custom_intent",          # whole_image|subject|background|custom_intent|none
-    intent_mask_path="region_mask.png",   # PNG 0/255 — white = region of interest
-    prior_reference_path="earlier.png",   # optional earlier reference for consistency scoring
-    model_path="baseline_model.json",     # optional trained model from aesthetic-model-training
-)
-
-print(result.quality_score)               # float [0, 1] — structural fidelity; higher = closer
-print(result.divergence_score)            # float [0, 1] — overall divergence; higher = more different
-print(result.artifact_score)              # float [0, 1] — perceptual/technical artefact severity
-print(result.temporal_consistency_score)  # float [0, 1] — stability vs prior reference
-print(result.regional_breakdown)          # dict of per-region raw metrics
-```
-
-`prior_reference_path` and the mask parameters are optional.  `step_index` and
-`intent_state` on the underlying `RegionalFeatureVector` are caller-defined
-labels with no fixed semantics — use them to encode sequence position (edit pass,
-frame number, variant index) and group/category (prompt variant, A/B group, style
-bucket) as appropriate for your workflow.
-
-Without `model_path`, scores are derived directly from image features (passthrough mode)
-— no training data or external dependencies required.  To produce a trained model, use
-[aesthetic-model-training](https://github.com/anomalyco/aesthetic-model-training), which
-owns the dataset builder, pseudo-label generation, and baseline training scripts.  The two
-repos are fully decoupled: training produces a `baseline_model.json` artefact; this library
-only reads it at runtime and never imports from the training repo.
-
-
-## Future Scope (v2+)
-
-**HPSv3** is deferred. It uses a Qwen2-VL-7B backbone and requires ≥16 GB VRAM.
-When implemented, it will follow the same interface pattern as HPSv2:
-`score_hpsv3(image_path, prompt) -> HPSv3ScoreResult`.
+GNU General Public License v3.0. Model weights and optional dependencies have
+their own licenses; review them before redistribution or commercial use.
