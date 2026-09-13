@@ -33,6 +33,10 @@ pyenv local image-aesthetic-scoring
 python -m pip install -e ".[dev]"
 ```
 
+The install fetches one dependency, OpenAI CLIP, straight from GitHub at a
+pinned commit, so it needs network access and `git` on the machine. That
+dependency also pulls `ftfy`, `regex`, and `tqdm`.
+
 Weights download lazily on first use.
 
 ## Quick Start
@@ -59,6 +63,54 @@ report = score_images(
     models=["laion", "fgaesq", "pickscore", "clipscore"],
 )
 ```
+
+Paths may be relative; they resolve against the current working directory.
+`evaluation_prompt` is required unless every selected model is prompt-free
+(`laion`, `fgaesq`).
+
+## Reading the report
+
+`score_images` returns an `ImageScoreReport` with three fields:
+
+- `image_ids` — the input filenames, basename only (e.g. `candidate-a.png`).
+- `evaluation_prompt` — the prompt you passed, or `None`.
+- `results` — a dict keyed by model name. Each value is a list of result
+  dataclasses.
+
+**The list has two shapes, depending on the model.** Read it the wrong way and
+you get the wrong number without an error:
+
+| Models | Shape of `results[model]` | How to index |
+|---|---|---|
+| `laion`, `fgaesq`, `hpsv2` | one result per image, in input order | `results[model][i]` is image `i` |
+| `pickscore`, `clipscore` | a single result covering all images | `results[model][0]`; its `scores` list is per image, in input order |
+
+The per-image models each expose their own scalar field; the batch models
+carry a `scores` list plus a `ranked_image_ids` list sorted best-first:
+
+```python
+laion = report.results["laion"]
+for image_id, result in zip(report.image_ids, laion):
+    print(image_id, result.aesthetic_score)        # LaionScoreResult
+
+fgaesq = report.results["fgaesq"]
+print(fgaesq[0].technical_score, fgaesq[0].aesthetic_score, fgaesq[0].subscores)
+
+hpsv2 = report.results["hpsv2"]
+print(hpsv2[0].preference_score)                    # per image, in input order
+
+clipscore = report.results["clipscore"][0]          # one result for the batch
+print(clipscore.scores)                             # one float per image, input order
+print(clipscore.ranked_image_ids)                   # image_ids, best first
+
+pickscore = report.results["pickscore"][0]
+print(pickscore.scores, pickscore.probabilities, pickscore.ranked_image_ids)
+```
+
+Every result also carries `image_id`, `model_name`, `model_version`,
+`latency_ms`, `device`, and `precision`. The whole report is JSON-serializable
+through `dataclasses.asdict`. Field definitions live in
+`aesthetic_scoring/types.py`.
 
 ## Direct APIs
 
