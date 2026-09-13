@@ -8,7 +8,6 @@ from aesthetic_scoring.types import (
     LaionScoreResult,
     PickScoreResult,
     HPSv2ScoreResult,
-    ImageRewardScoreResult,
     CLIPScoreResult,
     ImageScoreReport,
     FGAesQScoreResult,
@@ -73,14 +72,11 @@ def test_fgaesq_result_schema():
 
 
 def test_prompt_ranking_result_schemas():
-    reward = ImageRewardScoreResult(
-        **make_base(), prompt="a cat", scores=[0.4, 0.1], ranked_image_ids=["a.jpg", "b.jpg"]
-    )
     clipscore = CLIPScoreResult(
         **make_base(), prompt="a cat", scores=[0.8, 0.2], ranked_image_ids=["a.jpg", "b.jpg"]
     )
     report = ImageScoreReport(
-        image_ids=["a.jpg", "b.jpg"], evaluation_prompt="a cat", results={"imagereward": [reward], "clipscore": [clipscore]}
+        image_ids=["a.jpg", "b.jpg"], evaluation_prompt="a cat", results={"clipscore": [clipscore]}
     )
     json.dumps(dataclasses.asdict(report))
 

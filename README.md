@@ -12,11 +12,12 @@ into one "quality" number.
 | FGAesQ | No | Fine-grained aesthetic score | 2-3 GiB |
 | PickScore | Yes | Relative human preference for candidates | 3.8 GiB |
 | HPSv2.1 | Yes | General prompt-conditioned preference | 3.7 GiB |
-| ImageReward | Yes | Expert-trained text-to-image reward | optional |
 | CLIPScore | Yes | Raw image-text alignment, not aesthetic quality | under 1 GiB |
 
 Each model has its own scale, biases, and training data. Compare scores only
 within the same model, prompt, and candidate set.
+
+ImageReward was removed in 3.0.0. See DECISIONS.md for why.
 
 ## Requirements
 
@@ -30,13 +31,9 @@ within the same model, prompt, and candidate set.
 pyenv virtualenv 3.11.10 image-aesthetic-scoring
 pyenv local image-aesthetic-scoring
 python -m pip install -e ".[dev]"
-
-# Optional prompt-conditioned reward model
-python -m pip install -e ".[imagereward]"
 ```
 
-Weights download lazily on first use. ImageReward is optional because its
-upstream package has a larger dependency set.
+Weights download lazily on first use.
 
 ## Quick Start
 
@@ -53,7 +50,7 @@ for model, results in report.results.items():
 ```
 
 The suite runs models sequentially and unloads each one before loading the
-next. Select a subset to reduce run time or skip optional dependencies:
+next. Select a subset to reduce run time:
 
 ```python
 report = score_images(
@@ -70,7 +67,6 @@ from aesthetic_scoring import (
     score_clipscore,
     score_fgaesq,
     score_hpsv2,
-    score_imagereward,
     score_laion,
     score_pickscore,
 )
@@ -79,7 +75,6 @@ score_laion("image.png")
 score_fgaesq("image.png")
 score_pickscore(["a.png", "b.png"], "a studio portrait")
 score_hpsv2("image.png", "a studio portrait")
-score_imagereward(["a.png", "b.png"], "a studio portrait")
 score_clipscore(["a.png", "b.png"], "a studio portrait")
 ```
 
@@ -124,7 +119,6 @@ python -m pytest tests/smoke -q  # downloads weights and requires a GPU
 - PickScore: `yuvalkirstain/PickScore_v1`
 - HPSv2.1: `xswu/HPSv2`
 - FGAesQ: `yzc002/FGAesQ`
-- ImageReward: `THUDM/ImageReward`
 - CLIPScore: CLIP ViT-B/32 cosine similarity
 
 ## License

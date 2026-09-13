@@ -42,13 +42,6 @@ class FGAesQScoreResult(BaseScoreResult):
 
 
 @dataclass
-class ImageRewardScoreResult(BaseScoreResult):
-    prompt: str
-    scores: List[float]
-    ranked_image_ids: List[str]
-
-
-@dataclass
 class CLIPScoreResult(BaseScoreResult):
     prompt: str
     scores: List[float]

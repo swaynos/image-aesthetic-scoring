@@ -2,7 +2,7 @@
 
 ## Version
 
-2.0.0
+3.0.0
 
 ## Objective
 
@@ -19,7 +19,8 @@ prompt-alignment scorers for ranking generated-image candidates.
   another model's frozen text encoder.
 - Models load lazily and the suite unloads each selected model before the next
   one loads, targeting a 6 GiB VRAM budget.
-- ImageReward is an optional dependency. All other scorers are core features.
+- Every included scorer is a core feature with declared dependencies. The suite
+  carries no optional scorers.
 
 ## Public API
 
@@ -27,12 +28,11 @@ prompt-alignment scorers for ranking generated-image candidates.
 - `score_fgaesq(image_path) -> FGAesQScoreResult`
 - `score_pickscore(image_paths, prompt) -> PickScoreResult`
 - `score_hpsv2(image_path, prompt) -> HPSv2ScoreResult`
-- `score_imagereward(image_paths, prompt) -> ImageRewardScoreResult`
 - `score_clipscore(image_paths, prompt) -> CLIPScoreResult`
 - `score_images(image_paths, evaluation_prompt=None, models=None) -> ImageScoreReport`
 
 `score_images` runs selected models in the caller's order. It requires
-`evaluation_prompt` when selecting PickScore, HPSv2, ImageReward, or CLIPScore.
+`evaluation_prompt` when selecting PickScore, HPSv2, or CLIPScore.
 
 ## Included Models
 
@@ -42,11 +42,14 @@ prompt-alignment scorers for ranking generated-image candidates.
 | `fgaesq` | FGAesQ | No | Fine-grained aesthetic score |
 | `pickscore` | PickScore v1 | Yes | Candidate-relative preference logits and probabilities |
 | `hpsv2` | HPSv2.1 | Yes | Prompt-conditioned preference score |
-| `imagereward` | ImageReward v1.0 | Yes | Prompt-conditioned expert-preference reward |
 | `clipscore` | CLIP ViT-B/32 | Yes | Image-text cosine similarity |
 
 ## Out of Scope
 
+- ImageReward. Removed in 3.0.0. The published package (`image-reward` 1.5,
+  2023) does not import under transformers 5.x, no newer release exists, and
+  the only fix that lights it up would downgrade transformers below what
+  PickScore and HPSv2 need. See `DECISIONS.md`.
 - Reference-vs-derivative comparison and edit-degradation metrics
 - Dataset construction or model training
 - Technical IQA models, including TOPIQ, MUSIQ, MANIQA, and LIQE

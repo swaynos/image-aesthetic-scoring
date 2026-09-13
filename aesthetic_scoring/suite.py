@@ -8,13 +8,12 @@ from typing import List, Sequence
 from .clipscore import score_clipscore, unload as unload_clipscore
 from .fgaesq import score_fgaesq, unload as unload_fgaesq
 from .hpsv2 import score_hpsv2, unload as unload_hpsv2
-from .imagereward import score_imagereward, unload as unload_imagereward
 from .laion import score_laion, unload as unload_laion
 from .pickscore import score_pickscore, unload as unload_pickscore
 from .types import BaseScoreResult, ImageScoreReport
 
-DEFAULT_MODELS = ("laion", "fgaesq", "pickscore", "hpsv2", "imagereward", "clipscore")
-PROMPT_MODELS = frozenset({"pickscore", "hpsv2", "imagereward", "clipscore"})
+DEFAULT_MODELS = ("laion", "fgaesq", "pickscore", "hpsv2", "clipscore")
+PROMPT_MODELS = frozenset({"pickscore", "hpsv2", "clipscore"})
 
 
 def score_images(
@@ -69,11 +68,6 @@ def score_images(
                 results[model] = [score_hpsv2(path, evaluation_prompt) for path in image_paths]
             finally:
                 unload_hpsv2()
-        elif model == "imagereward":
-            try:
-                results[model] = [score_imagereward(list(image_paths), evaluation_prompt)]
-            finally:
-                unload_imagereward()
         elif model == "clipscore":
             try:
                 results[model] = [score_clipscore(list(image_paths), evaluation_prompt)]
