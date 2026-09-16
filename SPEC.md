@@ -2,12 +2,13 @@
 
 ## Version
 
-3.0.0
+3.1.0
 
 ## Objective
 
 Provide a lightweight, GPU-backed suite of image aesthetic, preference, and
-prompt-alignment scorers for ranking generated-image candidates.
+prompt-alignment scorers for ranking generated-image candidates, plus raw
+object-detection evidence for caller-defined evaluation policies.
 
 ## Principles
 
@@ -21,6 +22,9 @@ prompt-alignment scorers for ranking generated-image candidates.
   one loads, targeting a 6 GiB VRAM budget.
 - Every included scorer is a core feature with declared dependencies. The suite
   carries no optional scorers.
+- Detection, raw scores, and caller-defined policy output are separate layers.
+  Detection confidence is not an aesthetic score, and this package does not
+  assign a combined value.
 
 ## Public API
 
@@ -30,9 +34,26 @@ prompt-alignment scorers for ranking generated-image candidates.
 - `score_hpsv2(image_path, prompt) -> HPSv2ScoreResult`
 - `score_clipscore(image_paths, prompt) -> CLIPScoreResult`
 - `score_images(image_paths, evaluation_prompt=None, models=None) -> ImageScoreReport`
+- `detect_owl(image_path, queries, model="google/owlv2-base-patch16-ensemble") -> OwlDetectionResult`
+- `compare_owl_models(image_path, queries) -> list[OwlDetectionResult]`
+- `evaluate_image(image_path, detection_queries, evaluation_prompt=None, scoring_models=None) -> ImageEvaluationReport`
 
 `score_images` runs selected models in the caller's order. It requires
 `evaluation_prompt` when selecting PickScore, HPSv2, or CLIPScore.
+
+`compare_owl_models` runs OWL-ViT Base and OWLv2 Base in that order and unloads
+each model before the next begins. `evaluate_image` preserves both raw results
+and does not apply weights or calculate a final score.
+
+## Package Boundaries
+
+- `aesthetic_scoring`: raw aesthetic, preference, and prompt-alignment scores.
+- `object_detection`: text-conditioned boxes, labels, confidence, model
+  provenance, and image dimensions.
+- `image_evaluation`: sequential orchestration and combined evidence reports.
+
+Policies that weight this evidence belong in a later, explicitly versioned
+layer. They must distinguish no qualifying detection from failed inference.
 
 ## Included Models
 
@@ -56,6 +77,7 @@ prompt-alignment scorers for ranking generated-image candidates.
 - Q-ReAlign, VisionReward, HPSv3, and other models that exceed the lightweight
   hardware target or require an unresolved license decision
 - Identity, face, anatomy, and body-part assessment
+- Unspecified combined scoring or policy weights
 
 ## Acceptance Criteria
 
@@ -65,6 +87,9 @@ prompt-alignment scorers for ranking generated-image candidates.
 3. The suite unloads every selected model after its result is produced.
 4. `ImageScoreReport` is JSON serializable through `dataclasses.asdict`.
 5. Unit tests pass without a GPU, model weights, or network access.
+6. OWL-ViT and OWLv2 base comparisons unload one detector before loading the
+   next and preserve raw boxes and confidence in source-image pixel coordinates.
+7. Evaluation reports retain detector and scoring evidence without combining it.
 
 ## Verification
 

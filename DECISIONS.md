@@ -34,7 +34,7 @@ fixable on our side without breaking two scorers that work.
 **Alternatives rejected.**
 
 - *Keep it as an optional, skipped extra.* Leaves a dependency in the tree that
-  can never be satisfied against the pinned transformers, and a default
+  cannot satisfy the project's current Transformers policy, and a default
   `score_images(...)` still could not include it. Dead weight that invites the
   same investigation again.
 - *Pin transformers to 4.x.* High blast radius onto PickScore and HPSv2.
@@ -46,3 +46,26 @@ fixable on our side without breaking two scorers that work.
 transformers 5.x. At that point the scorer can return as a core feature.
 
 **Reference:** zai-org/ImageReward PRs #118, #123, issue #122.
+
+## 3.1.0 - Keep OWL Detection Outside The Scoring API
+
+**Date:** 2026-09-15
+
+**Decision:** Keep OWL-ViT and OWLv2 in `object_detection`, not in
+`aesthetic_scoring`. Use `image_evaluation` to retain detector and scorer
+evidence in one report. Do not add a combined score until a policy defines its
+conditions, weights, and failure handling.
+
+**Why.** A box, label, and confidence answer whether a model found a queried
+object. They do not measure aesthetics or preference. Keeping them separate
+allows a policy to change its weights without rerunning GPU inference, while
+retaining the model, query, threshold, and coordinates that produced the
+evidence.
+
+**Runtime policy.** The two base OWL models run serially and unload between
+passes, matching the project's 6 GiB target. OWLv2 Large remains experimental
+until a real GPU smoke test records peak allocated and reserved CUDA memory.
+
+**Transformers note.** The package declaration permits `transformers>=4.38`.
+This file's ImageReward discussion refers to its observed failure under
+Transformers 5.17; it does not declare a project-wide 5.17 pin.

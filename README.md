@@ -4,6 +4,18 @@ GPU-backed Python scoring suite for ranking generated images. It exposes raw
 scores from several models with different purposes. It does not combine them
 into one "quality" number.
 
+The distribution also contains local OWL-family object detection and an image
+evaluation orchestrator. They preserve raw evidence for a later, explicit
+policy; neither assigns a combined score.
+
+## Packages
+
+- `aesthetic_scoring` returns raw aesthetic, preference, and prompt-alignment
+  measurements.
+- `object_detection` runs text-conditioned OWL-ViT and OWLv2 detection.
+- `image_evaluation` runs both layers sequentially and returns their evidence
+  in one report for a separately defined policy.
+
 ## Models
 
 | Model | Prompt | What it measures | Typical VRAM |
@@ -67,6 +79,41 @@ report = score_images(
 Paths may be relative; they resolve against the current working directory.
 `evaluation_prompt` is required unless every selected model is prompt-free
 (`laion`, `fgaesq`).
+
+## OWL Detection And Evaluation
+
+`object_detection` is separate from the scoring API because boxes and
+confidence are evidence, not aesthetic scores. Both supported base models run
+one at a time and are unloaded between comparison passes:
+
+```python
+from object_detection import compare_owl_models
+
+results = compare_owl_models(
+    "candidate.png",
+    ["person", "bicycle"],
+    threshold=0.2,
+)
+for result in results:
+    print(result.model_id, result.detections)
+```
+
+Use `image_evaluation` when a later policy needs both kinds of evidence:
+
+```python
+from image_evaluation import evaluate_image
+
+report = evaluate_image(
+    "candidate.png",
+    detection_queries=["person", "bicycle"],
+    evaluation_prompt="a professional street portrait",
+    scoring_models=["laion", "clipscore"],
+)
+```
+
+The evaluation report does not contain a final score. A future policy must
+state its detection conditions, weights, and handling for failed inference.
+See `docs/IMAGE_EVALUATION.md` and `docs/OWL_DETECTION.md`.
 
 ## Reading the report
 
@@ -155,6 +202,9 @@ This project scores images and ranks candidates. It does not provide:
 - Technical image-quality assessment models such as TOPIQ or MANIQA
 - Reference-based edit degradation scoring
 - Identity, face, anatomy, or body-part scoring
+
+Object detection remains available as evidence for a caller-defined evaluation
+policy. It does not establish identity, aesthetic quality, or a final ranking.
 
 Git history retains the former reference-comparison experiment.
 
