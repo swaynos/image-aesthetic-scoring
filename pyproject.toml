@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aesthetic-scoring"
-version = "3.0.0"
+version = "3.1.0"
 description = "GPU-backed image scoring suite for aesthetics, preference, and prompt alignment"
 requires-python = "==3.11.*"
 dependencies = [

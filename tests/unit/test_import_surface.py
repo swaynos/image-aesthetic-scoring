@@ -46,3 +46,35 @@ def test_types_importable_from_submodule():
         CLIPScoreResult,
         FGAesQScoreResult,
     )
+
+
+def test_object_detection_imports_and_exports():
+    import object_detection
+    from object_detection import (
+        Detection,
+        OwlDetectionResult,
+        OWLVIT_BASE,
+        OWLV2_BASE,
+        detect_owl,
+        compare_owl_models,
+        unload,
+    )
+    from object_detection.types import Detection as DetType, OwlDetectionResult as ResType
+
+    assert callable(detect_owl)
+    assert callable(compare_owl_models)
+    assert callable(unload)
+    assert isinstance(OWLVIT_BASE, str)
+    assert isinstance(OWLV2_BASE, str)
+    assert DetType is Detection
+    assert ResType is OwlDetectionResult
+
+
+def test_image_evaluation_imports_and_exports():
+    import image_evaluation
+    from image_evaluation import ImageEvaluationReport, evaluate_image
+    from image_evaluation.types import ImageEvaluationReport as ReportType
+
+    assert callable(evaluate_image)
+    assert ReportType is ImageEvaluationReport
+

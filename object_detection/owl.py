@@ -91,7 +91,10 @@ def _nms_detections(
 ) -> list[Detection]:
     boxes = result["boxes"].detach().to(device="cpu", dtype=torch.float32)
     scores = result["scores"].detach().to(device="cpu", dtype=torch.float32)
-    labels = result.get("text_labels") or [queries[int(index)] for index in result["labels"]]
+    labels = result.get("text_labels")
+    if labels is None:
+        raw_labels = result.get("labels") or []
+        labels = [queries[int(index)] for index in raw_labels]
     grouped: dict[str, list[int]] = {}
     for index, (label, score) in enumerate(zip(labels, scores.tolist(), strict=True)):
         if score >= threshold:
@@ -125,7 +128,8 @@ def detect_owl(
         raise ValueError("max_detections must be positive")
 
     detector, processor, device, precision, dtype = _load(model)
-    image = Image.open(image_path).convert("RGB")
+    with Image.open(image_path) as img:
+        image = img.convert("RGB")
     started = time.perf_counter()
     inputs = processor(text=[cleaned_queries], images=image, return_tensors="pt")
     inputs = {
@@ -157,10 +161,12 @@ def detect_owl(
 def compare_owl_models(image_path: str, queries: list[str], **kwargs: Any) -> list[OwlDetectionResult]:
     """Run OWL-ViT then OWLv2, releasing the first model before the second."""
 
+    detection_kwargs = dict(kwargs)
+    detection_kwargs.pop("model", None)
     results = []
     for model in (OWLVIT_BASE, OWLV2_BASE):
         try:
-            results.append(detect_owl(image_path, queries, model, **kwargs))
+            results.append(detect_owl(image_path, queries, model, **detection_kwargs))
         finally:
             unload()
     return results

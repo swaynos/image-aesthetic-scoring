@@ -1,9 +1,15 @@
+import dataclasses
+import json
+import pytest
 from aesthetic_scoring.types import ImageScoreReport, LaionScoreResult
 from image_evaluation.pipeline import evaluate_image
 from object_detection.types import Detection, OwlDetectionResult
 
 
-def test_evaluation_preserves_raw_detection_and_scoring_evidence(monkeypatch):
+def test_evaluation_preserves_raw_detection_and_scoring_evidence(monkeypatch, tmp_path):
+    image_path = tmp_path / "image.png"
+    image_path.write_bytes(b"dummy")
+
     detection = OwlDetectionResult(
         image_id="image.png",
         model_id="google/owlv2-base-patch16-ensemble",
@@ -34,19 +40,52 @@ def test_evaluation_preserves_raw_detection_and_scoring_evidence(monkeypatch):
         },
     )
 
-    monkeypatch.setattr(
-        "image_evaluation.pipeline.compare_owl_models", lambda path, queries: [detection]
-    )
-    monkeypatch.setattr(
-        "image_evaluation.pipeline.score_images", lambda paths, **kwargs: score_report
-    )
+    captured_kwargs = {}
 
+    def mock_compare(path, queries, **kwargs):
+        captured_kwargs.update(kwargs)
+        return [detection]
+
+    monkeypatch.setattr("image_evaluation.pipeline.compare_owl_models", mock_compare)
+    monkeypatch.setattr("image_evaluation.pipeline.score_images", lambda paths, **kwargs: score_report)
+
+    # Test positional call with detection_kwargs forwarded
     report = evaluate_image(
-        "image.png", detection_queries=["person"], scoring_models=["laion"]
+        str(image_path),
+        ["person"],
+        scoring_models=["laion"],
+        threshold=0.2,
     )
 
     assert report.image_id == "image.png"
     assert report.detections == [detection]
     assert report.scores is score_report
     assert report.status == "complete"
-    assert report.to_dict()["detections"][0]["detections"][0]["label"] == "person"
+    assert captured_kwargs == {"threshold": 0.2}
+
+    # Verify JSON serialization
+    serialized_dict = report.to_dict()
+    assert serialized_dict["detections"][0]["detections"][0]["label"] == "person"
+    json_str_dict = json.dumps(serialized_dict)
+    assert "person" in json_str_dict
+
+    json_str_asdict = json.dumps(dataclasses.asdict(report))
+    assert "person" in json_str_asdict
+
+
+def test_evaluate_image_early_validation(tmp_path):
+    image_path = tmp_path / "image.png"
+    image_path.write_bytes(b"dummy")
+
+    with pytest.raises(TypeError, match="image_path must be str"):
+        evaluate_image(123, ["person"])
+
+    with pytest.raises(FileNotFoundError, match="Image not found"):
+        evaluate_image("nonexistent.png", ["person"])
+
+    with pytest.raises(ValueError, match="Unknown model"):
+        evaluate_image(str(image_path), ["person"], scoring_models=["unknown"])
+
+    with pytest.raises(ValueError, match="evaluation_prompt is required"):
+        evaluate_image(str(image_path), ["person"], scoring_models=["pickscore"])
+
